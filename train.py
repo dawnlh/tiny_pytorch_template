@@ -5,7 +5,6 @@ from data.data_load import train_dataloader
 from utils import Adder, Timer, check_lr
 from torch.utils.tensorboard import SummaryWriter
 from valid import _valid
-import torch.nn.functional as F
 
 
 def _train(model, args, logger=None):
@@ -77,7 +76,7 @@ def _train(model, args, logger=None):
             if (iter_idx + 1) % args.logger_freq == 0:
                 # logger
                 lr = check_lr(optimizer)
-                logger.info("[ Iter %04d/%04d ]\tTime: %7.4f min, LR: %.10f, Loss: %7.4f" % (
+                logger.info("[ Iter %04d/%04d ]\tTime: %4.2f min, LR: %.8e, Loss: %.6f" % (
                     iter_idx + 1, max_iter, iter_timer.toc(), lr, iter_loss_adder.average()))
                 writer.add_scalar('Train/Loss', iter_loss_adder.average(), iter_idx + (epoch_idx-1)* max_iter)
                 # reset
@@ -98,8 +97,8 @@ def _train(model, args, logger=None):
                         'optimizer': optimizer.state_dict(),
                         'scheduler': scheduler.state_dict(),
                         'epoch': epoch_idx}, save_name)
-        logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Loss: %7.4f" % (
-            epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_loss_adder.average()))
+        logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Total time: %4.2f h, Loss: %.6f" % (
+            epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_timer.total('h'), epoch_loss_adder.average()))
         
         # update & reset
         epoch_loss_adder.reset()

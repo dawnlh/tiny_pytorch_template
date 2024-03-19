@@ -25,20 +25,25 @@ class Adder(object):
 class Timer(object):
     def __init__(self, option='s'):
         self.tm = 0
+        self.init_tm = -1
         self.option = option
-        if option == 's':
-            self.devider = 1
-        elif option == 'm':
-            self.devider = 60
-        else:
-            self.devider = 3600
+        self.deviders = {'s':1, 'm':60, 'h':3600}
 
     def tic(self):
         self.tm = time.time()
+        if self.init_tm == -1:
+            self.init_tm = self.tm
 
-    def toc(self):
-        return (time.time() - self.tm) / self.devider
+    def toc(self, option=None):
+        option = option if option else self.option
+        return (time.time() - self.tm) / self.deviders[option]
 
+    def init(self):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.init_tm) )
+
+    def total(self, option=None):
+        option = option if option else self.option
+        return (time.time() - self.init_tm) / self.deviders[option]
 
 def check_lr(optimizer):
     for i, param_group in enumerate(optimizer.param_groups):
