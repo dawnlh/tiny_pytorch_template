@@ -1,0 +1,21 @@
+# -------------- setting ---------------
+model_name: UNet
+data_dir: dataset/GOPRO
+mode: test
+
+# -------------- train ---------------
+batch_size: 4
+learning_rate: 1e-4
+weight_decay: 0.0
+num_epoch: 3000
+logger_freq: 1
+num_worker: 8
+save_freq: 5
+valid_freq: 1
+resume: ''
+gamma: 0.5
+lr_steps: [100, 600, 1100] # 示例值，请根据实际情况调整
+
+# -------------- test ---------------
+test_model: ckp/MIMO-UNet.pth
+save_image: false

@@ -7,7 +7,7 @@ from skimage.metrics import peak_signal_noise_ratio
 import time
 
 
-def _eval(model, args, logger=None):
+def _test(model, args, logger=None):
     # ---------------------------- init ------------------------------------
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     torch.cuda.empty_cache()
