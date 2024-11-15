@@ -1,0 +1,9 @@
+conda:
+    pytorch
+pip:
+    opencv-python
+    scikit-image 
+    tensorboard
+    omegaconf
+    pytorch_msssim
+    tqdm

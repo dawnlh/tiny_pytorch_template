@@ -1,51 +1,64 @@
 import os
 import torch
-
-from data.data_load import train_dataloader
-from utils import Adder, Timer, check_lr
-from torch.utils.tensorboard import SummaryWriter
+from torch.nn.parallel import DistributedDataParallel as DDP
+from data.builder import build_dataloader
+from loss.builder import build_loss
+from optimization.builder import build_optimizer, build_lr_scheduler
+from utils.utils import Logger, TensorboardWriter, Adder, Timer, save_checkpoint, ddp_init, ddp_finalize, collect
 from valid import _valid
 
 
-def _train(model, args, logger=None):
+def _train(rank, model, args):
+
     # ---------------------------- init ------------------------------------
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    writer = SummaryWriter(log_dir=args.event_dir)
+    # master = rank==0
+    if args.num_gpus > 1:
+        ddp_init(rank=rank, num_gpus=args.num_gpus)
+    torch.cuda.set_device(rank)
+
+    # ---------------------------- logger ------------------------------------
     epoch = 1
-    best_psnr=-1
+    best_psnr = -1
     epoch_timer = Timer('m')
     iter_timer = Timer('m')
-    
+    # logger = get_logger(log_name='train', log_file=args['log_path'])
+    logger = Logger(log_name='train', log_file=args['log_path'], rank=rank)
+    writer = TensorboardWriter(args.event_dir, rank == 0)
+
+    # ---------------------------- model ------------------------------------
+    device = torch.device('cuda:{:d}'.format(rank))
+    model = model.to(device)
+    if args.num_gpus > 1:
+        model = DDP(model, device_ids=[rank])
 
     # ---------------------------- loss ------------------------------------
-    criterion = torch.nn.L1Loss()
+    criterion = build_loss(args)
     epoch_loss_adder = Adder()
     iter_loss_adder = Adder()
-    
-    
+
     # ----------------------- optimizer & scheduler ---------------------------------
-    optimizer = torch.optim.Adam(model.parameters(),
-                                 lr=args.learning_rate,
-                                 weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, args.lr_steps, args.gamma)
+    trainable_params = list(filter(lambda p: p.requires_grad, model.parameters()))
+    logger.info(f'Trainable parameters: {sum([p.numel() for p in trainable_params])/1e6:.2f} M\n')
+
+    optimizer = build_optimizer(trainable_params, args)
+    scheduler = build_lr_scheduler(optimizer, args)
+    # print('---', scheduler.get_last_lr()[0])
     
 
     # ---------------------------- dataloader ------------------------------------
-    dataloader = train_dataloader(args.data_dir, args.batch_size, args.num_worker)
+    dataloader = build_dataloader(args, mode='train')
     max_iter = len(dataloader)
-    
-    
+    val_dataloader = build_dataloader(args, mode='test')
+
     # ---------------------------- resume ------------------------------------
-    if args.resume:
-        state = torch.load(args.resume)
+    if args.resume_state:
+        state = torch.load(args.resume_state, weights_only=True)
         epoch = state['epoch']
-        optimizer.load_state_dict(state['optimizer'])
-        scheduler.load_state_dict(state['scheduler'])
-        model.load_state_dict(state['model'])
-        logger.info('💡 Resume from epoch %d'%epoch)
+        optimizer.load_state_dict(state['optimizer_state_dict'])
+        scheduler.load_state_dict(state['scheduler_state_dict'])
+        logger.info(f'==> Resume training state of Epoch-{epoch} from: {args.resume_state}')
         epoch += 1
 
-    
     # ---------------------------- train ------------------------------------
     for epoch_idx in range(epoch, args.num_epoch + 1):
         # reset timer
@@ -61,7 +74,7 @@ def _train(model, args, logger=None):
 
             # model forward
             pred_img = model(input_img)
-            
+
             # loss
             loss = criterion(pred_img, label_img)
             iter_loss_adder(loss.item())
@@ -75,44 +88,39 @@ def _train(model, args, logger=None):
             # -- iter ending --
             if (iter_idx + 1) % args.logger_freq == 0:
                 # logger
-                lr = check_lr(optimizer)
-                logger.info("[ Iter %04d/%04d ]\tTime: %4.2f min, LR: %.8e, Loss: %.6f" % (
-                    iter_idx + 1, max_iter, iter_timer.toc(), lr, iter_loss_adder.average()))
-                writer.add_scalar('Train/Loss', iter_loss_adder.average(), iter_idx + (epoch_idx-1)* max_iter)
+                # lr = check_lr(optimizer)
+                lr = scheduler.get_last_lr()[0]
+                logger.info("[ Iter %04d/%04d ]\tTime: %4.2f min, LR: %.8e, Loss: %.6f" %
+                            (iter_idx + 1, max_iter, iter_timer.toc(), lr, iter_loss_adder.average()))
+                writer.writer_update(iter_idx + (epoch_idx - 1) * max_iter, 'train', {'loss': iter_loss_adder.average()})
                 # reset
                 iter_timer.tic()
                 iter_loss_adder.reset()
-        
-        # -- epoch ending --   
-        # save model    
-        overwrite_name = os.path.join(args.model_save_dir, 'model_latest.pth')
-        torch.save({'model': model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'scheduler': scheduler.state_dict(),
-                    'epoch': epoch_idx}, overwrite_name)
 
+        # -- epoch ending --
+        # save model
+        save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='latest')
         if epoch_idx % args.save_freq == 0:
-            save_name = os.path.join(args.model_save_dir, 'model_%03d.pth' % epoch_idx)
-            torch.save({'model': model.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'scheduler': scheduler.state_dict(),
-                        'epoch': epoch_idx}, save_name)
-        logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Total time: %4.2f h, Loss: %.6f" % (
-            epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_timer.total('h'), epoch_loss_adder.average()))
-        
+            save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler)
+        logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Eta time: %4.2f h, Loss: %.6f" %
+                    (epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_timer.eta(args.num_epoch, epoch_idx,
+                                                                                   'h'), epoch_loss_adder.average()))
+
         # update & reset
         epoch_loss_adder.reset()
         scheduler.step()
 
         # valid
-        if epoch_idx % args.valid_freq == 0:
-            val_results = _valid(model, args, epoch_idx)
-            logger.info('\t==> Average PSNR %.2f dB\n' % (val_results))
-            writer.add_scalar('Valid/PSNR', val_results, epoch_idx)
+        if epoch_idx % args.valid_freq == 0 and rank == 0:
+            val_results = _valid(model, val_dataloader, args, epoch_idx)
+            logger.info('Valid: Aver. PSNR %.2f dB\n' % (val_results))
+            writer.writer_update(epoch_idx, 'valid', {'psnr': val_results})
             # update best model
             if val_results >= best_psnr:
-                torch.save({'model': model.state_dict(),'epoch': epoch_idx}, os.path.join(args.model_save_dir, 'model_best.pth'))
+                save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='best')
                 best_psnr = val_results
+
     # -- train ending --
-    save_name = os.path.join(args.model_save_dir, 'Final.pth')
-    torch.save({'model': model.state_dict(),'epoch': epoch_idx}, save_name)
+    save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='Final')
+    if args.num_gpus > 1:
+        ddp_finalize()

@@ -7,9 +7,11 @@
 
 - single file for each module, clear and concise
 - no complex functions and dependencies, fast validation of ideas
+- DDP support
 - argparse for easy parameter setting
 
 ## Dependencies
+
 - Python
 - Pytorch
 - scikit-image
@@ -17,6 +19,7 @@
 - Tensorboard
 
 ## Directory Structure
+
 - `data/`: dataset and data processing
 - `dataset/`: dataset for training and testing
 - `docs`: documents
@@ -26,10 +29,11 @@
 - `main.py`: main function for training and testing
 - `run.sh`: shell script for running the code
 - `train.py`: training function
-- `eval.py`: evaluation/test function
+- `test.py`: test/evaluation function
 - `valid.py`: validation function
 - `utils.py`: some useful functions used for the template
-- `resuluts/`: results and outputs
+- `exp/`: exp results and outputs
 
+## Usage
 
-
+`python main.py -c configs/config.yaml`

@@ -1,20 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from models.layers import ConvBlock
+from .UNet_layers import ConvBlock
 
-# ================ build net ================
-def build_net(model_name):
-    class ModelError(Exception):
-        def __init__(self, msg):
-            self.msg = msg
-
-        def __str__(self):
-            return self.msg
-
-    if model_name == "UNet":
-        return UNet()
-    raise ModelError(f'⚠️ Cannot find the model: {model_name}')
 
 # ================ network architecture ================
 class UNet(nn.Module):

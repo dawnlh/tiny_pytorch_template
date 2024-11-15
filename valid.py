@@ -1,19 +1,21 @@
+import os
 import torch
 from torchvision.transforms import functional as F
-from data.data_load import valid_dataloader
-from utils import Adder
+from torchvision.utils import save_image
 from skimage.metrics import peak_signal_noise_ratio
+from tqdm import tqdm
+from utils.utils import Adder
 
 
-def _valid(model, args, ep):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    valid_data = valid_dataloader(args.data_dir, batch_size=1, num_workers=0)
+def _valid(model, val_dataloader, args, epoch):
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     model.eval()
     psnr_adder = Adder()
+    pbar = tqdm(total=len(val_dataloader), desc='Valid')
 
     with torch.no_grad():
-        for idx, data in enumerate(valid_data):
-            input_img, label_img = data
+        for idx, data in enumerate(val_dataloader):
+            input_img, label_img, name = data
             input_img = input_img.to(device)
 
             pred = model(input_img)
@@ -24,7 +26,12 @@ def _valid(model, args, ep):
 
             psnr = peak_signal_noise_ratio(p_numpy, label_numpy, data_range=1)
             psnr_adder(psnr)
-            print('\r[ Valid %04d/%04d ]'%(idx+1,len(valid_data)), end=' ')
-
+            pbar.update(1)
+            if args.save_test_image:
+                save_name = os.path.join(args.output_dir, f'ep_{epoch:04d}_{name[0]}')
+                pred_clip += 0.5 / 255
+                save_image(pred, save_name)
     model.train()
+    pbar.close()
+
     return psnr_adder.average()

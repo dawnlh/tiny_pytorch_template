@@ -1,0 +1,68 @@
+# -------------- setting ---------------
+exp_dir: exp/
+mode: train # train, test
+gpu_ids: [0] # 
+
+# -------------- model ---------------
+model: 
+  name: UNet
+  in_nc: 3
+  out_nc: 3
+
+pretrained_weight: ~
+
+
+# -------------- data ---------------
+train_dataloader:
+  dataset:
+    name: DeblurDataset
+    image_dir: dataset/GOPRO_demo/train
+    transform: {random_crop: 256, random_hflip: true, random_vflip: true}
+  batch_size: 4
+  num_workers: 8
+  shuffle: true
+  pin_memory: true
+
+test_dataloader:
+  dataset:
+    name: DeblurDataset
+    image_dir: dataset/GOPRO_demo/test
+    transform: ~
+  batch_size: 1
+  num_workers: 4
+  shuffle: false
+  pin_memory: true
+
+
+# -------------- optimization ---------------
+
+optimizer:
+  name: Adam
+  lr: 1e-4
+  weight_decay: 0.0
+lr_scheduler:
+  name: MultiStepLR
+  milestones: [100, 600, 1100]
+  gamma: 0.5
+  warmup:
+    epoch: -1
+    strategy: linear # linear, cos, constant
+    init_lr: 0.0
+loss:
+  name: WeightedLoss
+  CharbonnierLoss: 0.5
+  EdgeLoss: 0.5
+
+# -------------- train ---------------
+
+num_epoch: 30
+logger_freq: 1
+save_freq: 5
+valid_freq: 1
+save_val_image: true
+resume_state: ~
+
+# -------------- test ---------------
+save_test_image: true
+test_on_cpu: false
+

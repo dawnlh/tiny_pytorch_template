@@ -1,26 +1,30 @@
 import os
 import torch
 from torchvision.utils import save_image
-from utils import Adder
-from data.data_load import test_dataloader
+from utils.utils import Logger, Adder
+from data.builder import build_dataloader
 from skimage.metrics import peak_signal_noise_ratio
 import time
 
 
 def _test(model, args, logger=None):
     # ---------------------------- init ------------------------------------
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    torch.cuda.empty_cache()
+    if args.test_on_cpu or not torch.cuda.is_available():
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda')
+        torch.cuda.empty_cache()
+    logger = Logger(log_name='test', log_file=args['log_path'])
+    logger.info('==> Test on device: {}'.format(device))
 
     # ---------------------------- dataloader ------------------------------------
-    dataloader = test_dataloader(args.data_dir, batch_size=1, num_workers=0)
+    dataloader = build_dataloader(args, mode='test')
 
-    # ---------------------------- load model ------------------------------------
-    state_dict = torch.load(args.test_model)
-    model.load_state_dict(state_dict['model'])
-    model.eval()
+    # ---------------------------- model ------------------------------------
+    model.to(device)
 
     # ---------------------------- eval ------------------------------------
+    model.eval()
     with torch.no_grad():
         psnr_adder = Adder()
         
@@ -42,7 +46,7 @@ def _test(model, args, logger=None):
             pred_numpy = pred_clip.squeeze(0).cpu().numpy()
             label_numpy = label_img.squeeze(0).cpu().numpy()
 
-            if args.save_image:
+            if args.save_test_image:
                 save_name = os.path.join(args.output_dir, name[0])
                 pred_clip += 0.5 / 255
                 save_image(pred, save_name)
