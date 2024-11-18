@@ -1,5 +1,4 @@
 import os
-import re
 import argparse
 from datetime import datetime
 import numpy as np
@@ -67,13 +66,11 @@ if __name__ == '__main__':
     cfg.num_gpus = len(cfg['gpu_ids'])
 
     # set dirs
-    cur_data_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    cur_date_time = datetime.now().strftime("%Y%m%d_%H%M%S")
     if cfg.resume_state:
-        match_str = re.search(r'\d{8}_\d{6}', cfg.resume_state)
-        date_time = match_str.group() if match_str else cur_data_time
+        work_dir = os.path.dirname(os.path.dirname(cfg.resume_state))
     else:
-        date_time = cur_data_time
-    work_dir = os.path.join('exp/', cfg.model.name, cfg.mode, date_time)
+        work_dir = os.path.join('exp/', cfg.model.name, cfg.mode, cur_date_time)
     cfg.work_dir = work_dir
     cfg.model_save_dir = os.path.join(work_dir, 'ckp/')
     cfg.output_dir = os.path.join(work_dir, 'output/')
