@@ -1,4 +1,5 @@
 import os
+import re
 import argparse
 from datetime import datetime
 import numpy as np
@@ -46,31 +47,32 @@ def main(cfg):
     else:
         raise ValueError('mode must be train or test')
 
-    # if torch.cuda.is_available():
-    #     model.cuda()
-    # if cfg.mode == 'train':
-    #     _train(model, cfg, logger)
-
-    # elif cfg.mode == 'test':
-    #     _test(model, cfg, logger)
-
 
 if __name__ == '__main__':
     # argparser
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-c', type=str, default='config.yaml')
+    parser.add_argument('--config', '-c', type=str, default='config.yaml') # config file path
+    parser.add_argument('--resume_dir', '-r', type=str, default='') # resume dir
     args = parser.parse_args()
 
-    # load config
+    # args & config
     config_file = args.config
     cfg = OmegaConf.load(config_file)
+    if args.resume_dir:
+        cfg.resume_state = os.path.join(args.resume_dir, 'ckp/latest_state.pth')
+        cfg.pretrained_weight = os.path.join(args.resume_dir, 'ckp/latest_model.pth')
 
     # set CUDA_VISIBLE_DEVICES
     os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(x) for x in cfg['gpu_ids'])
     cfg.num_gpus = len(cfg['gpu_ids'])
 
     # set dirs
-    date_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    cur_data_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if cfg.resume_state:
+        match_str = re.search(r'\d{8}_\d{6}', cfg.resume_state)
+        date_time = match_str.group() if match_str else cur_data_time
+    else:
+        date_time = cur_data_time
     work_dir = os.path.join('exp/', cfg.model.name, cfg.mode, date_time)
     cfg.work_dir = work_dir
     cfg.model_save_dir = os.path.join(work_dir, 'ckp/')
@@ -81,7 +83,10 @@ if __name__ == '__main__':
     # save config
     os.makedirs(cfg.work_dir, exist_ok=True)
     config_yaml = OmegaConf.to_yaml(cfg, resolve=True)
-    with open(os.path.join(cfg.work_dir, 'config.yaml'), 'w') as f:
+    config_file_name = os.path.join(cfg.work_dir, 'config.yaml')
+    if cfg.resume_state and os.path.isfile(config_file_name):
+        config_file_name = os.path.join(cfg.work_dir, f'config_resume_{cur_data_time}.yaml')
+    with open(config_file_name, 'w') as f:
         f.write(config_yaml)
 
     main(cfg)

@@ -57,7 +57,6 @@ def _train(rank, model, args):
         optimizer.load_state_dict(state['optimizer_state_dict'])
         scheduler.load_state_dict(state['scheduler_state_dict'])
         logger.info(f'==> Resume training state of Epoch-{epoch} from: {args.resume_state}')
-        epoch += 1
 
     # ---------------------------- train ------------------------------------
     for epoch_idx in range(epoch, args.num_epoch + 1):
