@@ -82,7 +82,7 @@ if __name__ == '__main__':
     config_yaml = OmegaConf.to_yaml(cfg, resolve=True)
     config_file_name = os.path.join(cfg.work_dir, 'config.yaml')
     if cfg.resume_state and os.path.isfile(config_file_name):
-        config_file_name = os.path.join(cfg.work_dir, f'config_resume_{cur_data_time}.yaml')
+        config_file_name = os.path.join(cfg.work_dir, f'config_resume_{cur_date_time}.yaml')
     with open(config_file_name, 'w') as f:
         f.write(config_yaml)
 
