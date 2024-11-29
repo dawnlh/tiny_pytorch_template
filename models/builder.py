@@ -10,6 +10,7 @@ def build_model(cfg, logger=None):
     # init model
     model_name = model_cfg.pop('name')
     model = eval(model_name)(**model_cfg) 
+    logger.info(model)
 
     # load pretrained weight
     if pretrained_weight is not None:

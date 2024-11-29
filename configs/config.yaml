@@ -56,13 +56,16 @@ loss:
 # -------------- train ---------------
 
 num_epoch: 30
+resume_state: ~
+use_amp: true # auto mixing precision
+
 logger_freq: 1
 save_freq: 5
 valid_freq: 1
 save_val_image: true
-resume_state: ~
 
 # -------------- test ---------------
 save_test_image: true
+torch_compile: ~
+  # mode: default # default, reduce-overhead, max-autotune
 test_on_cpu: false
-

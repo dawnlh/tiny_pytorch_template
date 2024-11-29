@@ -16,6 +16,10 @@ def _train(rank, model, args):
         ddp_init(rank=rank, num_gpus=args.num_gpus)
     torch.cuda.set_device(rank)
 
+    # amp
+    use_amp = args.get('use_amp', False)
+    scaler = torch.amp.GradScaler(enabled=use_amp)
+
     # ---------------------------- logger ------------------------------------
     epoch = 1
     best_psnr = -1
@@ -56,6 +60,7 @@ def _train(rank, model, args):
         epoch = state['epoch']
         optimizer.load_state_dict(state['optimizer_state_dict'])
         scheduler.load_state_dict(state['scheduler_state_dict'])
+        # scaler.load_state_dict(state["amp_scaler_state_dict"])
         logger.info(f'==> Resume training state of Epoch-{epoch} from: {args.resume_state}')
 
     # ---------------------------- train ------------------------------------
@@ -71,18 +76,21 @@ def _train(rank, model, args):
             input_img = input_img.to(device)
             label_img = label_img.to(device)
 
-            # model forward
-            pred_img = model(input_img)
-
-            # loss
-            loss = criterion(pred_img, label_img)
-            iter_loss_adder(loss.item())
-            epoch_loss_adder(loss.item())
+            with torch.autocast(device_type='cuda', enabled=use_amp):
+                # model forward
+                pred_img = model(input_img)
+                # loss
+                loss = criterion(pred_img, label_img)
 
             # backward update
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+            # iter log
+            iter_loss_adder(loss.item())
+            epoch_loss_adder(loss.item())
 
             # -- iter ending --
             if (iter_idx + 1) % args.logger_freq == 0:
@@ -98,9 +106,9 @@ def _train(rank, model, args):
 
         # -- epoch ending --
         # save model
-        save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='latest')
+        save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='latest')
         if epoch_idx % args.save_freq == 0:
-            save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler)
+            save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler)
         logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Eta time: %4.2f h, Loss: %.6f" %
                     (epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_timer.eta(args.num_epoch, epoch_idx,
                                                                                    'h'), epoch_loss_adder.average()))
@@ -116,10 +124,10 @@ def _train(rank, model, args):
             writer.writer_update(epoch_idx, 'valid', {'psnr': val_results})
             # update best model
             if val_results >= best_psnr:
-                save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='best')
+                save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='best')
                 best_psnr = val_results
 
     # -- train ending --
-    save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='Final')
+    save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='Final')
     if args.num_gpus > 1:
         ddp_finalize()

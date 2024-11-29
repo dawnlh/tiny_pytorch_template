@@ -1,5 +1,6 @@
 import os
 import argparse
+import atexit
 from datetime import datetime
 import numpy as np
 from omegaconf import OmegaConf
@@ -33,11 +34,11 @@ def main(cfg):
 
     # build model
     model = build_model(cfg,logger)
-    logger.info(model)
 
     # run
     if cfg.mode == 'train':
         if cfg.num_gpus > 1:
+            logger.info(f"gpu_ids ({cfg['num_gpus']}): {cfg['gpu_ids']}")
             mp.spawn(_train, nprocs=cfg.num_gpus,args=(model, cfg))
         else:
             _train(0, model, cfg)

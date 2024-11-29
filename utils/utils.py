@@ -287,7 +287,7 @@ def check_lr(optimizer):
     return lr
 
 @master_only
-def save_checkpoint(model, dir, epoch, optimizer=None, scheduler=None, prefix=None):
+def save_checkpoint(model, dir, epoch, optimizer=None, scheduler=None, amp_scaler=None, prefix=None):
     
     # prefix
     prefix = f'Epoch_{epoch:04d}' if prefix is None else prefix
@@ -298,23 +298,26 @@ def save_checkpoint(model, dir, epoch, optimizer=None, scheduler=None, prefix=No
     else:
         model_ = model
     
-    state_dict = model_.state_dict()
-    for key, param in state_dict.items():
+    model_state_dict = model_.state_dict()
+    for key, param in model_state_dict.items():
         if key.startswith('module.'):  # remove unnecessary 'module.'
             key = key[7:]
-        state_dict[key] = param.cpu()
+        model_state_dict[key] = param.cpu()
 
     # save weights
     torch.save({
         'epoch': epoch,
-        'model_state_dict': state_dict
+        'model_state_dict': model_state_dict
     }, os.path.join(dir, prefix + '_model.pth'))
 
     # save statr
-    if optimizer and scheduler:
-        torch.save({
-            'epoch': epoch,
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict(),
-        }, os.path.join(dir, prefix + '_state.pth'))
+    train_state_dict = {'epoch': epoch}
+    if optimizer:
+        train_state_dict.update({'optimizer_state_dict': optimizer.state_dict()})
+    if scheduler:
+        train_state_dict.update({'scheduler_state_dict': scheduler.state_dict()})
+    if amp_scaler:
+        train_state_dict.update({"amp_scaler_state_dict": amp_scaler.state_dict()})
+        
+    torch.save(train_state_dict, os.path.join(dir, prefix + '_state.pth'))
 

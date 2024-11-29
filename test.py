@@ -21,6 +21,10 @@ def _test(model, args, logger=None):
     dataloader = build_dataloader(args, mode='test')
 
     # ---------------------------- model ------------------------------------
+    # compile model
+    if args.get('torch_compile', False):
+        model = torch.compile(model, **args['torch_compile'])
+    # move to device
     model.to(device)
 
     # ---------------------------- eval ------------------------------------
@@ -56,4 +60,4 @@ def _test(model, args, logger=None):
             logger.info('[ Iter %04d/%04d ] PSNR: %.2f dB, time: %.2f s' % (iter_idx + 1, len(dataloader), psnr, cur_time - start_time))
 
         logger.info('==========================================================')
-        logger.info('Aver. PSNR %.2f dB, Total time: %.2f min' % (psnr_adder.average(), (cur_time - eval_start_time)/60))
+        logger.info('Aver. PSNR %.2f dB, Total time: %.4f min' % (psnr_adder.average(), (cur_time - eval_start_time)/60))
