@@ -12,7 +12,6 @@ def build_dataloader(cfg, mode='train', logger=None):
     dataset_ = eval(dataset_name)(**dataset_cfg)
     
     # dataloader
-    is_distributed = cfg.num_gpus > 1 and mode=='train'
-    dataloader_ = dataloader(dataset=dataset_, is_distributed=is_distributed, **dataloader_cfg)
+    dataloader_ = dataloader(dataset=dataset_, **dataloader_cfg)
     return dataloader_
     

@@ -35,7 +35,6 @@ test_dataloader:
 
 
 # -------------- optimization ---------------
-
 optimizer:
   name: Adam
   lr: 1e-4
@@ -54,10 +53,12 @@ loss:
   EdgeLoss: 0.5
 
 # -------------- train ---------------
-
-num_epoch: 30
+num_epoch: 10
 resume_state: ~
-use_amp: true # auto mixing precision
+fabric_conf:
+  accelerator: "cuda" # "cpu", "cuda", "mps", "gpu", "tpu", "auto"
+  precision: "bf16-mixed" # "32", "64", "bf16-mixed", "16-mixed"
+  strategy:  "ddp" # "dp", "ddp", "ddp_spawn", "deepspeed", "fsdp", "auto"
 
 logger_freq: 1
 save_freq: 5

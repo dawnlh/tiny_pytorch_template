@@ -8,16 +8,14 @@ from utils.utils import Adder
 
 
 def _valid(model, val_dataloader, args, epoch):
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     model.eval()
     psnr_adder = Adder()
     pbar = tqdm(total=len(val_dataloader), desc='Valid')
 
     with torch.no_grad():
         for idx, data in enumerate(val_dataloader):
+    
             input_img, label_img, name = data
-            input_img = input_img.to(device)
-
             pred = model(input_img)
 
             pred_clip = torch.clamp(pred, 0, 1)

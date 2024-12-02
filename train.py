@@ -1,39 +1,26 @@
 import os
 import torch
-from torch.nn.parallel import DistributedDataParallel as DDP
+from lightning.fabric import Fabric
 from data.builder import build_dataloader
 from loss.builder import build_loss
 from optimization.builder import build_optimizer, build_lr_scheduler
-from utils.utils import Logger, TensorboardWriter, Adder, Timer, save_checkpoint, ddp_init, ddp_finalize, collect
+from utils.utils import Logger, TensorboardWriter, Adder, Timer, save_checkpoint
 from valid import _valid
 
 
-def _train(rank, model, args):
+def _train(model, args, fabric):
 
     # ---------------------------- init ------------------------------------
-    # master = rank==0
-    if args.num_gpus > 1:
-        ddp_init(rank=rank, num_gpus=args.num_gpus)
-    torch.cuda.set_device(rank)
 
-    # amp
-    use_amp = args.get('use_amp', False)
-    scaler = torch.amp.GradScaler(enabled=use_amp)
 
     # ---------------------------- logger ------------------------------------
     epoch = 1
     best_psnr = -1
     epoch_timer = Timer('m')
     iter_timer = Timer('m')
-    # logger = get_logger(log_name='train', log_file=args['log_path'])
-    logger = Logger(log_name='train', log_file=args['log_path'], rank=rank)
-    writer = TensorboardWriter(args.event_dir, rank == 0)
+    logger = Logger(log_name='train', log_file=args['log_path'], rank=fabric.local_rank)
+    writer = TensorboardWriter(args.event_dir, fabric.local_rank == 0)
 
-    # ---------------------------- model ------------------------------------
-    device = torch.device('cuda:{:d}'.format(rank))
-    model = model.to(device)
-    if args.num_gpus > 1:
-        model = DDP(model, device_ids=[rank])
 
     # ---------------------------- loss ------------------------------------
     criterion = build_loss(args)
@@ -54,6 +41,12 @@ def _train(rank, model, args):
     max_iter = len(dataloader)
     val_dataloader = build_dataloader(args, mode='test')
 
+
+    # ---------------------------- fabric ------------------------------------
+    model, optimizer = fabric.setup(model, optimizer)
+    dataloader = fabric.setup_dataloaders(dataloader)
+    val_dataloader = fabric.setup_dataloaders(val_dataloader)
+    
     # ---------------------------- resume ------------------------------------
     if args.resume_state:
         state = torch.load(args.resume_state, weights_only=True)
@@ -63,30 +56,28 @@ def _train(rank, model, args):
         # scaler.load_state_dict(state["amp_scaler_state_dict"])
         logger.info(f'==> Resume training state of Epoch-{epoch} from: {args.resume_state}')
 
+
     # ---------------------------- train ------------------------------------
     for epoch_idx in range(epoch, args.num_epoch + 1):
         # reset timer
         epoch_timer.tic()
         iter_timer.tic()
-
         # run iter
         for iter_idx, batch_data in enumerate(dataloader):
             # data to device
             input_img, label_img = batch_data
-            input_img = input_img.to(device)
-            label_img = label_img.to(device)
+            input_img = input_img
+            label_img = label_img
 
-            with torch.autocast(device_type='cuda', enabled=use_amp):
-                # model forward
-                pred_img = model(input_img)
-                # loss
-                loss = criterion(pred_img, label_img)
+            # model forward
+            pred_img = model(input_img)
+            # loss
+            loss = criterion(pred_img, label_img)
 
             # backward update
             optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            fabric.backward(loss)
+            optimizer.step()
 
             # iter log
             iter_loss_adder(loss.item())
@@ -106,28 +97,26 @@ def _train(rank, model, args):
 
         # -- epoch ending --
         # save model
-        save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='latest')
+        save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='latest')
         if epoch_idx % args.save_freq == 0:
-            save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler)
+            save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler)
         logger.info("[ Epoch %04d/%04d ]\tTime: %4.2f min, Eta time: %4.2f h, Loss: %.6f" %
                     (epoch_idx, args.num_epoch, epoch_timer.toc(), epoch_timer.eta(args.num_epoch, epoch_idx,
                                                                                    'h'), epoch_loss_adder.average()))
 
         # update & reset
-        epoch_loss_adder.reset()
         scheduler.step()
+        epoch_loss_adder.reset()
 
         # valid
-        if epoch_idx % args.valid_freq == 0 and rank == 0:
+        if epoch_idx % args.valid_freq == 0 and fabric.is_global_zero:
             val_results = _valid(model, val_dataloader, args, epoch_idx)
             logger.info('Valid: Aver. PSNR %.2f dB\n' % (val_results))
             writer.writer_update(epoch_idx, 'valid', {'psnr': val_results})
             # update best model
             if val_results >= best_psnr:
-                save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='best')
+                save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='best')
                 best_psnr = val_results
 
     # -- train ending --
-    save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, amp_scaler=scaler, prefix='Final')
-    if args.num_gpus > 1:
-        ddp_finalize()
+    save_checkpoint(model, args.model_save_dir, epoch_idx, optimizer, scheduler, prefix='Final')

@@ -125,7 +125,7 @@ def get_file_path(data_dir, ext=None):
 
 # ---- logging  ----
 class Logger():
-    def __init__(self, log_name=None, log_file='./runtime.log', log_level=logging.INFO, rank=0):
+    def __init__(self, log_name=None, log_file='./runtime.log', log_level='INFO', sub_log_level='ERROR', rank=0):
         logger = logging.getLogger(log_name)
         # if the logger has been initialized, just return it
         if log_name != 'metric':
@@ -137,7 +137,7 @@ class Logger():
         logger.addHandler(stream_handler)
         logger.propagate = False
         if rank != 0:
-            logger.setLevel('ERROR')
+            logger.setLevel(sub_log_level)
         elif log_file is not None:
             logger.setLevel(log_level)
             file_handler = logging.FileHandler(log_file, 'a')
